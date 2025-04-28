@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing to the ARC-X Gaming Compressor! We welcome any support, whether it's through bug reports, improvement suggestions, or code contributions.
 
+[Deutsche Version](CONTRIBUTING.de.md)
+
 ## How Can I Contribute?
 
 ### Reporting Bugs

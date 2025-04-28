@@ -1,11 +1,13 @@
 <div align="center">
-  <img src="image/ARC-X-Logo.png" alt="ARC-X Gaming Compressor Logo" width="300">
+  <img src="../image/ARC-X-Logo.png" alt="ARC-X Gaming Compressor Logo" width="300">
   <p><em>Logo is a temporary placeholder</em></p>
 </div>
 
 # ARC-X Gaming Compressor
 
 A powerful tool for scanning, compressing, and extracting game files with multithreading support.
+
+[Deutsche Version](README.de.md)
 
 ## Description
 
@@ -97,8 +99,9 @@ Extracts an .arcx archive from the `compressed/` folder to the specified output 
 │   ├── extractor.py   # Module for extracting .arcx archives
 │   ├── utils.py       # Helper functions for file detection and processing
 ├── compressed/        # Output directory for compressed archives
+├── docs/              # Documentation
 ├── requirements.txt   # Dependencies
-└── README.md          # Documentation
+└── README.md          # Brief overview and reference to documentation
 ```
 
 > **Development Note**: The current version of ARC-X is implemented as a test version in only three main files. In future versions, the code structure will be improved and modularized to ensure better maintainability and extensibility. The simple structure of the current version allows for quick testing and iteration of core functionalities.
@@ -112,11 +115,11 @@ Extracts an .arcx archive from the `compressed/` folder to the specified output 
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
 
 ## Contributing
 
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.en.md) for details on our code of conduct and the process for submitting pull requests.
 
 ## Acknowledgments
 
