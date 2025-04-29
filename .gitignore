@@ -110,3 +110,4 @@ virtualenv/
 # Project specific
 compressed/
 *.arcx
+/tests
