@@ -22,7 +22,8 @@ from datetime import datetime
 # Import der Hilfsfunktionen aus utils.py
 from utils import (
     is_texture, is_audio, is_model, is_script,
-    get_file_size, get_file_category, format_size
+    get_file_size, get_file_category, format_size,
+    get_compression_level_by_type
 )
 
 # Konfiguration des Loggings
@@ -120,7 +121,7 @@ def scan_directory(directory_path, log_file):
     
     return stats
 
-def compress_file(file_path, output_path, compression_level=3):
+def compress_file(file_path, output_path, compression_level=None):
     """
     Komprimiert eine Datei mit Zstandard und speichert sie im Zielordner.
     
@@ -128,7 +129,7 @@ def compress_file(file_path, output_path, compression_level=3):
         file_path (str): Pfad zur zu komprimierenden Datei
         output_path (str): Pfad, unter dem die komprimierte Datei gespeichert werden soll
         compression_level (int, optional): Komprimierungsstufe (1-22, höher = stärkere Kompression, langsamer)
-                                          Standardwert: 3
+                                          Wenn None, wird der optimale Level basierend auf dem Dateityp bestimmt
     
     Returns:
         tuple: (original_size, compressed_size, compression_ratio)
@@ -148,7 +149,26 @@ def compress_file(file_path, output_path, compression_level=3):
         # Originalgröße ermitteln
         original_size = os.path.getsize(file_path)
         
-        # Zstandard-Kompressor mit angegebener Komprimierungsstufe erstellen
+        # Wenn kein Kompressionslevel angegeben wurde, optimalen Level basierend auf Dateityp bestimmen
+        if compression_level is None:
+            compression_level = get_compression_level_by_type(file_path)
+            file_type = "unknown"
+            if is_script(file_path):
+                file_type = "script"
+            elif is_texture(file_path):
+                file_type = "texture"
+            elif is_audio(file_path):
+                file_type = "audio"
+            elif is_model(file_path):
+                file_type = "model"
+            else:
+                file_type = "other"
+            
+            logger.info(f"Compressing {file_path} with level {compression_level} due to type {file_type}")
+        else:
+            logger.info(f"Compressing {file_path} with manually set level {compression_level}")
+        
+        # Zstandard-Kompressor mit bestimmtem Kompressionslevel erstellen
         cctx = zstd.ZstdCompressor(level=compression_level)
         
         # Datei komprimieren
@@ -174,7 +194,7 @@ def compress_file(file_path, output_path, compression_level=3):
         logger.error(f"Fehler beim Komprimieren von {file_path}: {e}")
         raise
 
-def create_arcx_archive(input_dir, output_file, compression_level=3, log_file='compression_results.log'):
+def create_arcx_archive(input_dir, output_file, compression_level=None, log_file='compression_results.log'):
     """
     Erstellt eine .arcx-Archivdatei aus einem Verzeichnis.
     
@@ -182,6 +202,7 @@ def create_arcx_archive(input_dir, output_file, compression_level=3, log_file='c
         input_dir (str): Pfad zum Quellverzeichnis
         output_file (str): Pfad zur Ausgabe-Archivdatei (.arcx)
         compression_level (int, optional): Komprimierungsstufe (1-22)
+                                          Wenn None, wird der optimale Level für jeden Dateityp automatisch bestimmt
         log_file (str, optional): Pfad zur Log-Datei
     
     Returns:
@@ -217,15 +238,28 @@ def create_arcx_archive(input_dir, output_file, compression_level=3, log_file='c
             f.write(f"Datum: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"Quellverzeichnis: {input_dir}\n")
             f.write(f"Ausgabe-Archiv: {output_file}\n")
-            f.write(f"Komprimierungsstufe: {compression_level}\n")
-            f.write("-" * 100 + "\n")
-            f.write(f"{'Dateipfad':<50} {'Kategorie':<10} {'Original':<15} {'Komprimiert':<15} {'Ratio':<10}\n")
-            f.write("-" * 100 + "\n")
+            
+            if compression_level is None:
+                f.write("Komprimierungsstufe: Automatisch (basierend auf Dateityp)\n")
+                f.write("  - Skripte (.txt, .json, .xml, .lua): Level 12\n")
+                f.write("  - Texturen (.png, .jpg, .dds): Level 5\n")
+                f.write("  - Audiodateien (.wav, .ogg, .mp3): Level 2\n")
+                f.write("  - 3D-Modelle (.fbx, .obj, .dae): Level 6\n")
+                f.write("  - Alle anderen: Level 3\n")
+            else:
+                f.write(f"Komprimierungsstufe: {compression_level} (manuell festgelegt)\n")
+                
+            f.write("-" * 120 + "\n")
+            f.write("KOMPRESSIONSDETAILS:\n")
+            f.write("-" * 120 + "\n")
+            f.write(f"{'Dateipfad':<50} {'Kategorie':<10} {'Original':<15} {'Komprimiert':<15} {'Ratio':<20}\n")
+            f.write("-" * 120 + "\n")
         
         # Metadaten-Datei für das Archiv erstellen
         metadata = {
             'version': '1.0',
             'created': datetime.now().isoformat(),
+            'compression_mode': 'automatic_by_type' if compression_level is None else 'manual',
             'compression_level': compression_level,
             'files': []
         }
@@ -255,13 +289,34 @@ def create_arcx_archive(input_dir, output_file, compression_level=3, log_file='c
                     else:
                         category = "Sonstige"
                     
+                    # Bestimme den Kompressionslevel für diese Datei
+                    file_compression_level = compression_level
+                    if file_compression_level is None:
+                        file_compression_level = get_compression_level_by_type(file_path)
+                        
+                        # Bestimme den Dateityp für den Log-Eintrag
+                        file_type = "other"
+                        if is_script(file_path):
+                            file_type = "script"
+                        elif is_texture(file_path):
+                            file_type = "texture"
+                        elif is_audio(file_path):
+                            file_type = "audio"
+                        elif is_model(file_path):
+                            file_type = "model"
+                        
+                        # Schreibe die Entscheidung in die Log-Datei
+                        with open(log_file, 'a', encoding='utf-8') as f:
+                            f.write(f"INFO: Compressing {rel_path} with level {file_compression_level} due to type {file_type}\n")
+                    
                     # Datei komprimieren
-                    original_size, compressed_size, ratio = compress_file(file_path, temp_output_path, compression_level)
+                    original_size, compressed_size, ratio = compress_file(file_path, temp_output_path, file_compression_level)
                     
                     # Metadaten für diese Datei hinzufügen
                     metadata['files'].append({
                         'path': rel_path,
                         'category': category,
+                        'compression_level': file_compression_level,
                         'original_size': original_size,
                         'compressed_size': compressed_size
                     })
@@ -277,7 +332,7 @@ def create_arcx_archive(input_dir, output_file, compression_level=3, log_file='c
                     # In Log-Datei schreiben
                     with open(log_file, 'a', encoding='utf-8') as f:
                         f.write(f"{rel_path:<50} {category:<10} {format_size(original_size):<15} "
-                                f"{format_size(compressed_size):<15} {ratio:.2f}x\n")
+                                f"{format_size(compressed_size):<15} {ratio:.2f}x (Level {file_compression_level})\n")
                     
                 except Exception as e:
                     logger.error(f"Fehler beim Komprimieren von {file_path}: {e}")
@@ -306,9 +361,19 @@ def create_arcx_archive(input_dir, output_file, compression_level=3, log_file='c
         
         # Zusammenfassung in Log-Datei schreiben
         with open(log_file, 'a', encoding='utf-8') as f:
-            f.write("\n" + "-" * 100 + "\n")
+            f.write("\n" + "-" * 120 + "\n")
             f.write("ZUSAMMENFASSUNG\n")
-            f.write("-" * 100 + "\n")
+            f.write("-" * 120 + "\n")
+            
+            if compression_level is None:
+                f.write("Verwendete Kompressionsstrategie: Automatisch basierend auf Dateityp\n")
+                f.write("  - Skripte: Level 12\n")
+                f.write("  - Texturen: Level 5\n")
+                f.write("  - Audiodateien: Level 2\n")
+                f.write("  - 3D-Modelle: Level 6\n")
+                f.write("  - Andere Dateien: Level 3\n\n")
+            else:
+                f.write(f"Verwendete Kompressionsstrategie: Manuell festgelegter Level {compression_level} für alle Dateien\n\n")
             f.write(f"Gesamtanzahl Dateien: {stats['total_files']}\n")
             
             if stats['total_compressed_size'] > 0:
@@ -607,31 +672,208 @@ def compress_directory_multithreaded(input_dir, output_dir, num_threads=4, compr
     return stats
 
 
+def extract_arcx_archive(archive_path, output_dir, log_file='decompression_results.log'):
+    """
+    Extrahiert ein ARCX-Archiv in ein Verzeichnis.
+    
+    Args:
+        archive_path (str): Pfad zum ARCX-Archiv
+        output_dir (str): Pfad zum Ausgabeverzeichnis
+        log_file (str, optional): Pfad zur Log-Datei
+    
+    Returns:
+        dict: Statistik über die Dekomprimierung
+    """
+    logger.info(f"Starte Extraktion des ARCX-Archivs: {archive_path}")
+    
+    # Sicherstellen, dass das Ausgabeverzeichnis existiert
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Temporäres Verzeichnis für die Extraktion erstellen
+    import tempfile
+    temp_dir = tempfile.mkdtemp(prefix="arcx_extract_temp_")
+    
+    try:
+        # Statistik initialisieren
+        stats = {
+            'total_files': 0,
+            'total_original_size': 0,
+            'total_compressed_size': 0,
+            'categories': {
+                'Textur': {'count': 0, 'original_size': 0, 'compressed_size': 0},
+                'Audio': {'count': 0, 'original_size': 0, 'compressed_size': 0},
+                'Modell': {'count': 0, 'original_size': 0, 'compressed_size': 0},
+                'Script': {'count': 0, 'original_size': 0, 'compressed_size': 0},
+                'Sonstige': {'count': 0, 'original_size': 0, 'compressed_size': 0}
+            }
+        }
+        
+        # ARCX-Archiv extrahieren
+        import zipfile
+        with zipfile.ZipFile(archive_path, 'r') as zipf:
+            # Zuerst die Metadaten extrahieren
+            zipf.extract("arcx_metadata.json", temp_dir)
+            
+            # Metadaten laden
+            import json
+            with open(os.path.join(temp_dir, "arcx_metadata.json"), 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+            
+            # Alle Dateien extrahieren
+            zipf.extractall(temp_dir)
+        
+        # Log-Datei initialisieren
+        with open(log_file, 'w', encoding='utf-8') as f:
+            f.write(f"ARC-X Gaming Compressor - Dekomprimierungsergebnisse\n")
+            f.write(f"Datum: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Quell-Archiv: {archive_path}\n")
+            f.write(f"Ausgabeverzeichnis: {output_dir}\n")
+            f.write(f"Archiv-Version: {metadata.get('version', 'Unbekannt')}\n")
+            f.write("-" * 120 + "\n")
+            f.write("DEKOMPRESSIONSDETAILS:\n")
+            f.write("-" * 120 + "\n")
+            f.write(f"{'Dateipfad':<50} {'Kategorie':<10} {'Komprimiert':<15} {'Original':<15} {'Ratio':<20}\n")
+            f.write("-" * 120 + "\n")
+        
+        # Alle Dateien dekomprimieren
+        for file_info in metadata['files']:
+            file_path = file_info['path']
+            category = file_info['category']
+            original_size = file_info['original_size']
+            compressed_size = file_info['compressed_size']
+            
+            # Komprimierte Datei
+            compressed_path = os.path.join(temp_dir, file_path + ".zst")
+            
+            # Ausgabepfad
+            output_path = os.path.join(output_dir, file_path)
+            
+            # Sicherstellen, dass das Zielverzeichnis existiert
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            # Datei dekomprimieren
+            logger.info(f"Dekomprimiere {compressed_path}")
+            import zstandard as zstd
+            dctx = zstd.ZstdDecompressor()
+            with open(compressed_path, 'rb') as ifh, open(output_path, 'wb') as ofh:
+                dctx.copy_stream(ifh, ofh)
+            
+            # Statistik aktualisieren
+            stats['total_files'] += 1
+            stats['total_original_size'] += original_size
+            stats['total_compressed_size'] += compressed_size
+            
+            if category in stats['categories']:
+                stats['categories'][category]['count'] += 1
+                stats['categories'][category]['original_size'] += original_size
+                stats['categories'][category]['compressed_size'] += compressed_size
+            else:
+                stats['categories']['Sonstige']['count'] += 1
+                stats['categories']['Sonstige']['original_size'] += original_size
+                stats['categories']['Sonstige']['compressed_size'] += compressed_size
+            
+            # Kompressionsrate berechnen
+            if compressed_size > 0:
+                ratio = original_size / compressed_size
+            else:
+                ratio = 0
+            
+            # In Log-Datei schreiben
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(f"{file_path:<50} {category:<10} {format_size(compressed_size):<15} {format_size(original_size):<15} {ratio:.2f}x\n")
+        
+        # Zusammenfassung in Log-Datei schreiben
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write("\n" + "-" * 120 + "\n")
+            f.write("ZUSAMMENFASSUNG\n")
+            f.write("-" * 120 + "\n")
+            
+            if stats['total_compressed_size'] > 0:
+                overall_ratio = stats['total_original_size'] / stats['total_compressed_size']
+            else:
+                overall_ratio = 0
+                
+            f.write(f"Gesamtanzahl Dateien: {stats['total_files']}\n")
+            f.write(f"Gesamtgröße (Original): {format_size(stats['total_original_size'])}\n")
+            f.write(f"Gesamtgröße (Komprimiert): {format_size(stats['total_compressed_size'])}\n")
+            f.write(f"Gesamtersparnis: {format_size(stats['total_original_size'] - stats['total_compressed_size'])}\n")
+            f.write(f"Durchschnittliche Kompressionsrate: {overall_ratio:.2f}x\n\n")
+            
+            f.write("Aufschlüsselung nach Kategorien:\n")
+            for category, data in stats['categories'].items():
+                if data['count'] > 0:
+                    if data['compressed_size'] > 0:
+                        cat_ratio = data['original_size'] / data['compressed_size']
+                    else:
+                        cat_ratio = 0
+                        
+                    f.write(f"{category}: {data['count']} Dateien, "
+                            f"Original: {format_size(data['original_size'])}, "
+                            f"Komprimiert: {format_size(data['compressed_size'])}, "
+                            f"Ratio: {cat_ratio:.2f}x\n")
+        
+        logger.info(f"Extraktion abgeschlossen. {stats['total_files']} Dateien dekomprimiert.")
+        logger.info(f"Ergebnisse wurden in {log_file} gespeichert.")
+        
+        return stats
+    
+    finally:
+        # Temporäres Verzeichnis aufräumen
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
 def main():
     """
     Hauptfunktion des Programms.
     """
     parser = argparse.ArgumentParser(description='ARC-X Gaming Compressor - Verzeichnisscanner und Komprimierer')
-    parser.add_argument('directory', help='Zu durchsuchendes Verzeichnis')
+    parser.add_argument('directory', help='Zu durchsuchendes Verzeichnis oder ARCX-Archiv')
     parser.add_argument('--log', default='before_compression.log', help='Pfad zur Log-Datei (Standard: before_compression.log)')
     parser.add_argument('--compress', action='store_true', help='Dateien komprimieren und ARCX-Archiv erstellen')
+    parser.add_argument('--decompress', action='store_true', help='ARCX-Archiv dekomprimieren')
     parser.add_argument('--multithreaded', action='store_true', help='Multithreaded Komprimierung verwenden')
     parser.add_argument('--threads', type=int, default=4, help='Anzahl der zu verwendenden Threads (Standard: 4)')
-    parser.add_argument('--output', default=None, help='Name der Ausgabe-Archivdatei (Standard: Name des Quellverzeichnisses)')
-    parser.add_argument('--level', type=int, default=3, choices=range(1, 23), help='Komprimierungsstufe (1-22, Standard: 3)')
+    parser.add_argument('--output', default=None, help='Name der Ausgabe-Archivdatei oder -verzeichnisses')
+    parser.add_argument('--level', type=int, default=None, choices=range(1, 23), help='Komprimierungsstufe (1-22, Standard: automatisch basierend auf Dateityp)')
     parser.add_argument('--extract-dir', default=None, help='Verzeichnis für die Ausgabe der komprimierten Dateien (ohne Archiv)')
     
     args = parser.parse_args()
-    
-    # Überprüfen, ob das angegebene Verzeichnis existiert
-    if not os.path.isdir(args.directory):
-        logger.error(f"Das angegebene Verzeichnis existiert nicht: {args.directory}")
-        return
     
     # Absoluten Pfad für die Log-Datei erstellen
     log_path = args.log
     if not os.path.isabs(log_path):
         log_path = os.path.join(os.getcwd(), log_path)
+    
+    # Wenn --decompress angegeben wurde, ARCX-Archiv extrahieren
+    if args.decompress:
+        # Überprüfen, ob die angegebene Datei existiert und eine ARCX-Datei ist
+        if not os.path.isfile(args.directory) or not args.directory.lower().endswith('.arcx'):
+            logger.error(f"Die angegebene Datei ist kein gültiges ARCX-Archiv: {args.directory}")
+            return
+        
+        # Ausgabeverzeichnis bestimmen
+        if args.output is None:
+            # Standardmäßig den Namen des Archivs ohne Endung verwenden
+            output_dir = os.path.splitext(os.path.basename(args.directory))[0] + "_extracted"
+            output_dir = os.path.join(os.path.dirname(args.directory), output_dir)
+        else:
+            output_dir = args.output
+        
+        # Sicherstellen, dass der Pfad absolut ist
+        if not os.path.isabs(output_dir):
+            output_dir = os.path.join(os.getcwd(), output_dir)
+        
+        # Dekomprimierungslog-Datei
+        decompression_log = os.path.join(os.path.dirname(log_path), 'decompression_results.log')
+        
+        # ARCX-Archiv extrahieren
+        extract_arcx_archive(args.directory, output_dir, decompression_log)
+        
+        return
+    
+    # Überprüfen, ob das angegebene Verzeichnis existiert
+    if not os.path.isdir(args.directory):
+        logger.error(f"Das angegebene Verzeichnis existiert nicht: {args.directory}")
+        return
     
     # Verzeichnis scannen
     scan_directory(args.directory, log_path)
@@ -665,12 +907,11 @@ def main():
         if not output_name.endswith('.arcx'):
             output_name += '.arcx'
         
-        # Sicherstellen, dass der compressed/ Ordner existiert
-        compressed_dir = os.path.join(os.getcwd(), 'compressed')
-        os.makedirs(compressed_dir, exist_ok=True)
-        
-        # Ausgabepfad im compressed/ Ordner erstellen
-        output_file = os.path.join(compressed_dir, output_name)
+        # Wenn der Ausgabepfad nicht absolut ist, im aktuellen Verzeichnis erstellen
+        if not os.path.isabs(output_name):
+            output_file = os.path.join(os.getcwd(), output_name)
+        else:
+            output_file = output_name
         
         logger.info(f"ARCX-Archiv wird erstellt in: {output_file}")
         

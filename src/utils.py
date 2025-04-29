@@ -169,3 +169,36 @@ def is_valid_file(file_path):
         bool: True, wenn die Datei existiert und lesbar ist, sonst False
     """
     return os.path.isfile(file_path) and os.access(file_path, os.R_OK)
+
+def get_compression_level_by_type(file_path):
+    """
+    Bestimmt den optimalen Zstandard-Kompressionslevel basierend auf dem Dateityp.
+    
+    Verschiedene Dateitypen profitieren von unterschiedlichen Kompressionsleveln:
+    - Skripte: Hoher Level für beste Kompression (meist kleine Textdateien)
+    - Texturen: Mittlerer Level (Balance zwischen Kompression und Geschwindigkeit)
+    - Audiodateien: Niedriger Level (oft bereits komprimiert)
+    - 3D-Modelle: Mittlerer bis hoher Level (strukturierte Daten)
+    - Andere: Standard-Level
+    
+    Args:
+        file_path (str): Pfad zur Datei
+        
+    Returns:
+        int: Zstandard-Kompressionslevel (1-22)
+    """
+    if is_script(file_path):
+        # Skripte (.txt, .json, .xml, .lua, etc.): Hoher Level für beste Kompression
+        return 12
+    elif is_texture(file_path):
+        # Texturen (.png, .jpg, .dds, etc.): Mittlerer Level
+        return 5
+    elif is_audio(file_path):
+        # Audiodateien (.wav, .ogg, .mp3, etc.): Niedriger Level, da oft bereits komprimiert
+        return 2
+    elif is_model(file_path):
+        # 3D-Modelle (.fbx, .obj, .dae, etc.): Mittlerer bis hoher Level
+        return 6
+    else:
+        # Alle anderen Dateitypen: Standard-Level
+        return 3

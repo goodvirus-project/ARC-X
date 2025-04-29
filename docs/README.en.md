@@ -60,6 +60,8 @@ ARC-X was built from the ground up for the gaming industry and focuses on the sp
 - **Compressed size**: 89.7 GB
 - **Space savings**: 30.3 GB (30.3% less storage space)
 
+> **Note on compression**: In future versions of ARC-X, I will further optimize the compression algorithms to achieve even better compression rates. I am working on advanced techniques specifically tailored to different game file types, which are expected to improve space savings by an additional 5-10%.
+
 ## Installation
 
 1. Clone the repository:
